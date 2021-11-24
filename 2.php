@@ -250,7 +250,7 @@ function importXml(string $a)
 
     $data = file_get_contents(__DIR__."\\".$a);
     $xml  = new SimpleXMLElement($data);
-    if ($xml === false) throw new Exception("importXml: не удается прочитать xml")
+    if ($xml === false) throw new Exception("importXml: не удается прочитать xml");
     $pos = 0;
     foreach ($xml as $tag=>$value)
     {
