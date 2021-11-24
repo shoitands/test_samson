@@ -51,7 +51,7 @@ function mySortForKey(array $a, string $b): array
 
 $dbServer = "127.0.0.1";
 $dbUser = "shoitan";
-$dbPass = "psiH1238";
+$dbPass = "somepass";
 $dbName = "test_samson";
 $dbHandler = null;
 
@@ -60,6 +60,7 @@ function dbConnect()
     global $dbHandler, $dbServer, $dbUser, $dbPass, $dbName;
     if ($dbHandler) return ;
     $dbHandler = mysqli_connect($dbServer, $dbUser, $dbPass, $dbName);
+    if (!$dbHandler) throw new Exception("ошибка соединения с базой данных");
 }
 function dbDisconnect()
 {
@@ -74,7 +75,6 @@ function dbCategoryGetByName(string $cat): int
     if (!isset($catCache[$cat]))
     {
         if ($result = mysqli_query($dbHandler, "SELECT * FROM a_category WHERE name = '$cat';"))
-        //if ($result = mysqli_query($dbHandler, "SELECT * FROM a_category;"))
         {
             if ($obj = $result->fetch_object())
             {
@@ -85,7 +85,7 @@ function dbCategoryGetByName(string $cat): int
         }
         else
         {
-            throw new Exception("dbCategoryGetByName: не удалось сделать запрос");
+            throw new Exception("dbCategoryGetByName: ".mysqli_error($dbHandler));
             return 0;
         }
     }
@@ -109,6 +109,7 @@ function dbCategoryGetChildren(int $cid): array
     ";
     if (!$cid) $query = "SELECT * FROM a_category;";
     $result = mysqli_query($dbHandler, $query);
+    if (!$result) throw new Exception("dbCategoryGetChildren: ".mysqli_error($dbHandler));
     $obj = $result->fetch_object();
     while ($obj = $result->fetch_object())
     {
@@ -120,23 +121,20 @@ function dbCategoryGetChildren(int $cid): array
 function dbCategoryCreate(string $code, string $name, int $parent = 0)
 {
     global $dbHandler;
-    $code = iconv("utf-8", "windows-1251", $code);
     if (!$parent) $parent = "null";
     if ($result = mysqli_query($dbHandler, "INSERT a_category(code, name, parent_id) VALUES('$code', '$name', $parent);"))
     {
         return mysqli_insert_id($dbHandler);
     }
-    else
-    {
-        throw new Exception("dbCategoryCreate: не удалось сделать запрос");
-        echo mysqli_error($dbHandler).mysqli_info($dbHandler);
-    }
+    else throw new Exception("dbCategoryCreate: ".mysqli_error($dbHandler));
+
 }
 function dbProductGetById(int $pid): array
 {
     global $dbHandler;
     $query = "SELECT * FROM a_product WHERE id=$pid;";
     $result = mysqli_query($dbHandler, $query);
+    if (!$result) throw new Exception("dbProductGetById: ".mysqli_error($dbHandler));
     $obj = $result->fetch_object();
     return array("id" => $obj->id, "name" => $obj->name,"code" => $obj->code);
 }
@@ -146,6 +144,7 @@ function dbProductGetGroups(int $pid): array
     $r = array();
     $query = "SELECT * FROM a_category_alias WHERE product_id=$pid;";
     $result = mysqli_query($dbHandler, $query);
+    if (!$result) throw new Exception("dbProductGetGroups: ".mysqli_error($dbHandler));
     while ($obj = $result->fetch_object())
     {
         $r[] = $obj->category_id;
@@ -158,6 +157,7 @@ function dbProductGetProperties(int $pid): array
     $r = array();
     $query = "SELECT * FROM a_property WHERE product_id=$pid;";
     $result = mysqli_query($dbHandler, $query);
+    if (!$result) throw new Exception("dbProductGetProperties: ".mysqli_error($dbHandler));
     while ($obj = $result->fetch_object())
     {
         if ($obj->parent_id)
@@ -174,6 +174,7 @@ function dbProductGetPrices(int $pid): array
     $r = array();
     $query = "SELECT * FROM a_price WHERE product_id=$pid;";
     $result = mysqli_query($dbHandler, $query);
+    if (!$result) throw new Exception("dbProductGetPrices: ".mysqli_error($dbHandler));
     while ($obj = $result->fetch_object())
     {
         $r[$obj->price_type] = $obj->price;
@@ -195,7 +196,8 @@ function dbProductCreate(SimpleXMLElement $node, int $pos = 0)
     }
     if (!$code) throw new ParseError("dbProductCreate: нет кода");
     if (!$name) throw new ParseError("dbProductCreate: нет имени");
-    mysqli_query($dbHandler, "INSERT a_product(code, name) VALUES ('$code', '$name');");
+    $result = mysqli_query($dbHandler, "INSERT a_product(code, name) VALUES ('$code', '$name');");
+    if (!$result) throw new Exception("dbProductCreate: ".mysqli_error($dbHandler));
     $pid = mysqli_insert_id($dbHandler);
     foreach ($node as $tag=>$element)
     {
@@ -205,17 +207,20 @@ function dbProductCreate(SimpleXMLElement $node, int $pos = 0)
             case "Цена":
                 $price = $element[0];
                 $priceType = $element->attributes()->{'Тип'};
-                mysqli_query($dbHandler, "INSERT a_price(product_id, price_type, price) VALUES ($pid, '$priceType', '$price');");
+                $result = mysqli_query($dbHandler, "INSERT a_price(product_id, price_type, price) VALUES ($pid, '$priceType', '$price');");
+                if (!$result) throw new Exception("dbProductCreate/price: ".mysqli_error($dbHandler));
                 break;
             case "Свойства":
                 $properties = Array();
                 foreach ($element as $ptag=>$property)
                 {
-                    mysqli_query($dbHandler, "INSERT a_property(product_id, property, value) VALUES ($pid, '$ptag', '$property[0]');");
+                    $result = mysqli_query($dbHandler, "INSERT a_property(product_id, property, value) VALUES ($pid, '$ptag', '$property[0]');");
+                    if (!$result) throw new Exception("dbProductCreate/property: ".mysqli_error($dbHandler));
                     $prop_id = mysqli_insert_id($dbHandler);
                     foreach ($property->attributes() as $atag=>$value)
                     {
-                        mysqli_query($dbHandler, "INSERT a_property(product_id, property, value, parent_id) VALUES ($pid, '$atag', '$value', $prop_id);");
+                        $result = mysqli_query($dbHandler, "INSERT a_property(product_id, property, value, parent_id) VALUES ($pid, '$atag', '$value', $prop_id);");
+                        if (!$result) throw new Exception("dbProductCreate/property/attribute: ".mysqli_error($dbHandler));
                     }
                 }
                 break;
@@ -226,8 +231,8 @@ function dbProductCreate(SimpleXMLElement $node, int $pos = 0)
                     {
                         $cid = dbCategoryGetByName($cat);
                         if (!$cid) $cid = dbCategoryCreate("", $cat);
-                        mysqli_query($dbHandler, "INSERT a_category_alias(product_id, category_id) VALUES ($pid, $cid);");
-                        echo mysqli_error($dbHandler).mysqli_info($dbHandler);
+                        $result = mysqli_query($dbHandler, "INSERT a_category_alias(product_id, category_id) VALUES ($pid, $cid);");
+                        if (!$result) throw new Exception("dbProductCreate/category: ".mysqli_error($dbHandler));
                     }
                 }
                 break;
@@ -238,18 +243,14 @@ function importXml(string $a)
 {
     if (!file_exists(__DIR__."\\".$a))
     {
-        throw new Exception("importXml: ".$a." not found");
+        throw new Exception("importXml: ".$a." не найден");
     }
     global $dbHandler;
     if (!$dbHandler) dbConnect();
 
-    mysqli_query($dbHandler, "DELETE FROM a_category_alias WHERE product_id < 9999;");
-    mysqli_query($dbHandler, "DELETE FROM a_price WHERE product_id < 9999;");
-    mysqli_query($dbHandler, "DELETE FROM a_property WHERE product_id < 9999;");
-    mysqli_query($dbHandler, "DELETE FROM a_category WHERE id < 9999;");
-    mysqli_query($dbHandler, "DELETE FROM a_product WHERE id < 9999;");
     $data = file_get_contents(__DIR__."\\".$a);
     $xml  = new SimpleXMLElement($data);
+    if ($xml === false) throw new Exception("importXml: не удается прочитать xml")
     $pos = 0;
     foreach ($xml as $tag=>$value)
     {
@@ -291,6 +292,7 @@ function exportXml(string $a, string $b = null)
         ";
     }
     $result = mysqli_query($dbHandler, $query);
+    if (!$result) throw new Exception("exportXml/get_category_aliases: ".mysqli_error($dbHandler));
     while ($obj = $result->fetch_object())
     {
         if (!isset($list[$obj->product_id])) $list[$obj->product_id] = array();
@@ -322,7 +324,6 @@ function exportXml(string $a, string $b = null)
         $xml .= '</Товар>'.$nl;
     }
     $xml .= '</Товары>'.$nl;
-    echo $xml;
     $xml = iconv("utf-8", "windows-1251", $xml);
     file_put_contents(__DIR__."/".$a, $xml);
 }
