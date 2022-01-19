@@ -27,6 +27,7 @@ CREATE TABLE `a_category` (
   `code` varchar(45) DEFAULT NULL,
   `name` varchar(45) DEFAULT NULL,
   `parent_id` int(11) DEFAULT NULL,
+  `level` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `id_UNIQUE` (`id`),
   KEY `parent_for_category_idx` (`parent_id`),
