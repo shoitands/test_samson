@@ -1,20 +1,12 @@
 <?php
-function invertString(string $b): string
-{
-    $r = "";
-    for ($i = strlen($b); $i > 0; $i--)
-    {
-        $r .= substr($b, $i - 1, 1);
-    }
-    return $r;
-}
+
 function convertString(string $a, string $b): string
 {
     $pos = strpos($a, $b);
     if ($pos !== false) $pos = strpos($a, $b, $pos + strlen($b));
     if ($pos !== false)
     {
-        $a = substr($a, 0, $pos).invertString($b).substr($a, $pos + strlen($b));
+        $a = substr($a, 0, $pos).strrev($b).substr($a, $pos + strlen($b));
     }
     return $a;
 }
@@ -28,7 +20,7 @@ function convertString2(string $a, string $b): string
     $p = preparePattern($b);
     $r = preg_replace_callback($p, function($m) use (&$counter, $b)
     {
-        if ($counter++ == 1) return invertString($b);
+        if ($counter++ == 1) return strrev($b);
         else return $b;
     },
     $a);
@@ -118,11 +110,29 @@ function dbCategoryGetChildren(int $cid): array
     }
     return $r;
 }
+function dbCategoryGetByLevel(int $level): array
+{
+    global $dbHandler;
+    $query = "SELECT * FROM a_category WHERE level=$level";
+    $result = mysqli_query($dbHandler, $query);
+    if (!$result) throw new Exception("dbCategoryGetByLevel: ".mysqli_error($dbHandler));
+    $res = array();
+    while ($obj = $result->fetch_object()) $res[] = $obj;
+    return $res;
+}
 function dbCategoryCreate(string $code, string $name, int $parent = 0)
 {
     global $dbHandler;
     if (!$parent) $parent = "null";
-    if ($result = mysqli_query($dbHandler, "INSERT a_category(code, name, parent_id) VALUES('$code', '$name', $parent);"))
+    $level = 0;
+    if ($parent !== null)
+    {
+        $result = mysqli_query($dbHandler, "SELECT * FROM a_category WHERE id=$parent");
+        if (!$result) throw new Exception("dbCategoryCreate: ".mysqli_error($dbHandler));
+        $obj = $result->fetch_object();
+        $level = $obj->level + 1;
+    }
+    if ($result = mysqli_query($dbHandler, "INSERT a_category(code, name, parent_id, level) VALUES('$code', '$name', $parent, $level);"))
     {
         return mysqli_insert_id($dbHandler);
     }
@@ -196,6 +206,8 @@ function dbProductCreate(SimpleXMLElement $node, int $pos = 0)
     }
     if (!$code) throw new ParseError("dbProductCreate: нет кода");
     if (!$name) throw new ParseError("dbProductCreate: нет имени");
+    $code = htmlspecialchars($code);
+    $name = htmlspecialchars($name);
     $result = mysqli_query($dbHandler, "INSERT a_product(code, name) VALUES ('$code', '$name');");
     if (!$result) throw new Exception("dbProductCreate: ".mysqli_error($dbHandler));
     $pid = mysqli_insert_id($dbHandler);
@@ -205,8 +217,8 @@ function dbProductCreate(SimpleXMLElement $node, int $pos = 0)
         {
 
             case "Цена":
-                $price = $element[0];
-                $priceType = $element->attributes()->{'Тип'};
+                $price = htmlspecialchars($element[0]);
+                $priceType = htmlspecialchars($element->attributes()->{'Тип'});
                 $result = mysqli_query($dbHandler, "INSERT a_price(product_id, price_type, price) VALUES ($pid, '$priceType', '$price');");
                 if (!$result) throw new Exception("dbProductCreate/price: ".mysqli_error($dbHandler));
                 break;
@@ -214,12 +226,16 @@ function dbProductCreate(SimpleXMLElement $node, int $pos = 0)
                 $properties = Array();
                 foreach ($element as $ptag=>$property)
                 {
-                    $result = mysqli_query($dbHandler, "INSERT a_property(product_id, property, value) VALUES ($pid, '$ptag', '$property[0]');");
+                    $ptage = htmlspecialchars($ptag);
+                    $ptagv = htmlspecialchars($property[0]);
+                    $result = mysqli_query($dbHandler, "INSERT a_property(product_id, property, value) VALUES ($pid, '$ptage', '$ptagv');");
                     if (!$result) throw new Exception("dbProductCreate/property: ".mysqli_error($dbHandler));
                     $prop_id = mysqli_insert_id($dbHandler);
                     foreach ($property->attributes() as $atag=>$value)
                     {
-                        $result = mysqli_query($dbHandler, "INSERT a_property(product_id, property, value, parent_id) VALUES ($pid, '$atag', '$value', $prop_id);");
+                        $atage = htmlspecialchars($atag);
+                        $atagv = htmlspecialchars($value);
+                        $result = mysqli_query($dbHandler, "INSERT a_property(product_id, property, value, parent_id) VALUES ($pid, '$atage', '$atagv', $prop_id);");
                         if (!$result) throw new Exception("dbProductCreate/property/attribute: ".mysqli_error($dbHandler));
                     }
                 }
@@ -229,6 +245,7 @@ function dbProductCreate(SimpleXMLElement $node, int $pos = 0)
                 {
                     if ($ctag == "Раздел")
                     {
+                        $cat = htmlspecialchars($cat);
                         $cid = dbCategoryGetByName($cat);
                         if (!$cid) $cid = dbCategoryCreate("", $cat);
                         $result = mysqli_query($dbHandler, "INSERT a_category_alias(product_id, category_id) VALUES ($pid, $cid);");
